@@ -4,6 +4,12 @@ pvshrink automates the invocation of pvmove to condense PV usage at the start
 of the volume, and then invokes pvresize to shrink a PV to its minimum possible
 size.
 
+## Usage
+
+```
+   pvshrink /path/to/pv
+```  
+
 ## Background 
 
 LVM provides the the pvresize tool which can be used to grow or shrink the size
@@ -24,9 +30,43 @@ at the beginning of the PV and then calculates the minimum possible size for
 the volume (taking into account metadata space) and invokes pvresize using
 this.
 
-## Usage
+## Example
+
+In the example below, the 3g PV can't be resized by 100m despite having 212m free, because it is fragmented:
 
 ```
-   pvshrink /path/to/pv
-```  
+# pvs -o +pv_used /dev/vda2 
+  PV         VG     Fmt  Attr PSize PFree   Used 
+  /dev/vda2  fedora lvm2 a--  3.00g 212.00m 2.79g
+# pvresize --setphysicalvolumesize 2.9g /dev/vda2 
+  /dev/vda2: cannot resize to 742 extents as later ones are allocated.
+  0 physical volume(s) resized / 1 physical volume(s) not resized
+```
+
+pvshrink can defragment it:
+
+```
+# ./pvshrink /dev/vda2 
+Moving 50 blocks from 714 to 664
+  /dev/vda2: Moved: 4.00%
+  /dev/vda2: Moved: 100.00%
+50 of 50 (100.00%) done
+Defragmentation complete.
+Metadata size: 1048576 b
+PE size: 4.0 MiB
+Total size 1048576 b + 714 x 4194304 b = 2995781632 b (2.8 GiB)
+    Wiping internal VG cache
+    Wiping cache of LVM-capable devices
+    Archiving volume group "fedora" metadata (seqno 15).
+    /dev/vda2: Pretending size is 5851136 not 6287360 sectors.
+    Resizing volume "/dev/vda2" to 5851136 sectors.
+    Resizing physical volume /dev/vda2 from 0 to 714 extents.
+    Updating physical volume "/dev/vda2"
+    Creating volume group backup "/etc/lvm/backup/fedora" (seqno 16).
+  Physical volume "/dev/vda2" changed
+  1 physical volume(s) resized / 0 physical volume(s) not resized
+Minimum partition size is 2995781632 b = 5851136 x 512 b sectors
+```
+The last line tells us the minimum size in sectors that we could resize the partition to.
+
    
