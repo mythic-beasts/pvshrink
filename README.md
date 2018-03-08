@@ -69,4 +69,14 @@ Minimum partition size is 2995781632 b = 5851136 x 512 b sectors
 ```
 The last line tells us the minimum size in sectors that we could resize the partition to.
 
-   
+Note that pvshrink also avoided the annoying problem of calculating the minimum possible PV size:
+
+```
+[root@46 pvshrink]# pvs --units b -o +pv_used /dev/vda2 
+  PV         VG     Fmt  Attr PSize       PFree Used       
+  /dev/vda2  fedora lvm2 a--  2994733056B    0B 2994733056B
+[root@46 pvshrink]# pvresize --setphysicalvolumesize 2994733056B /dev/vda2 
+  /dev/vda2: cannot resize to 713 extents as 714 are allocated.
+  0 physical volume(s) resized / 1 physical volume(s) not resized
+```
+
