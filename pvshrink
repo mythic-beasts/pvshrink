@@ -1,0 +1,121 @@
+#!/usr/bin/python
+
+import subprocess
+import sys
+import re
+import math
+import argparse
+
+
+
+def human_readable(v):
+    v = float(v)
+    fmt = "%.0f %s"
+    for u in ("b", "KiB", "MiB", "GiB"):
+        if v < 1000:
+            return fmt % (v, u)
+        fmt = "%.1f %s"
+        v = v / 1024
+        
+    return fmt % (v, "TiB")
+
+parser = argparse.ArgumentParser(description = "Defragment and shrink an LVM PV")
+parser.add_argument("device", type=str)
+args = parser.parse_args()
+
+
+total_segments_to_move = None
+total_segments_moved = 0
+
+device = args.device
+
+while True:
+    free_blocks = []
+    used_blocks = []
+
+    pvs = subprocess.check_output(['pvs','--segments','-o','lv_name,pv_segstart,pv_segsize','--separator',',','--noheadings',device])
+    for seg in pvs.split("\n"):
+        if seg.strip() == "":
+            continue
+        (lv, start, size) = seg.strip().split(',')
+        if lv == "":
+            free_blocks.append({ "start": int(start), "size": int(size)})
+        else:
+            used_blocks.append({ "start": int(start), "size": int(size), "lv": lv})
+
+    total_allocated = 0
+    for b in used_blocks:
+        total_allocated = total_allocated + b["size"]
+
+    print("Total allocated extents %d" % total_allocated)
+
+    if len(used_blocks) == 0 or len(free_blocks) == 0:
+        print("Defragmentation not required.")
+        break
+
+    if free_blocks[0]["start"] > used_blocks[-1]["start"]:
+        print("All allocated extents precedes all free extents - done")
+        break
+
+
+    segments_to_move = 0
+    for b in used_blocks:
+        if b["start"] + b["size"] > total_allocated:
+            segments_to_move = segments_to_move + b["start"] + b["size"] - max(total_allocated, b["start"])
+
+    if total_segments_to_move is None:
+        total_segments_to_move = segments_to_move
+
+    print("Remaining segments to move %d / %d " % (segments_to_move, total_segments_to_move))
+
+    for b in used_blocks:
+        if b["start"] + b["size"] > total_allocated:
+            from_start = max(b["start"], total_allocated)
+            size = min(b["size"], free_blocks[0]["size"])
+            to_start = free_blocks[0]["start"]
+            print("Moving %d blocks from %d to %d" % (size, from_start, to_start))
+            break
+
+
+    ret = subprocess.call(["pvmove","--alloc","anywhere",
+        "%s:%d-%d" % (device, from_start, from_start + size -1),
+        "%s:%d-%d" % (device, to_start, to_start + size - 1)])
+    if ret != 0:
+        print("pvmove returned %d" % ret)
+        sys.exit(1)
+    total_segments_moved = total_segments_moved + size
+    print("%d of %d (%.2f%%) done" % (total_segments_moved, total_segments_to_move, 100*float(total_segments_moved)/float(total_segments_to_move)))
+
+pvck = subprocess.check_output(['pvck', device])
+
+match = re.search(r'Found text metadata area: offset=(\d+), size=(\d+)', pvck)
+if match is None:
+    print("Could not parse pvck output:\n %s" % pvck)
+    sys.exit(1)
+
+metadata_size = int(match.group(1)) + int(match.group(2))
+print("Metadata size: %d b" % metadata_size)
+
+pvdisplay = subprocess.check_output(['pvdisplay','--units','b', device])
+
+match = re.search(r'PE Size\s*(\d+)', pvdisplay)
+if match is None:
+    print("Could not parse pvdisplay output:\n %s" % pvdisplay)
+    sys.exit(1)
+
+pe_size = int(match.group(1))
+
+print("PE size: %d b" % pe_size)
+
+total_size = pe_size * total_allocated + metadata_size
+
+print("Total size %d b + %d x %d b = %d b (%s)" % (metadata_size, total_allocated, pe_size, total_size, human_readable(total_size)))
+
+ret = subprocess.call(["pvresize", "-v","--setphysicalvolumesize", "%db" % total_size, device])
+if ret != 0:
+    print("pvresize returned %d" % ret)
+    sys.exit(1)
+
+sectors = math.ceil(float(total_size) / 512)
+
+print("Partition can be resized to %d x 512 b sectors" % sectors)
