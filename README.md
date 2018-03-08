@@ -20,8 +20,9 @@ at the beginning of the PV.
 pvshrink also calculates the minimum possible size for the volume (taking into
 account metadata space) and invokes pvresize using this.
 
+```
 Usage:
 
    pvshrink /path/to/pv
-   
+```  
    
