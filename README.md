@@ -81,4 +81,8 @@ Note that pvshrink also avoided the annoying problem of calculating the minimum 
 ```
 Note that 2994733056B is 714 x 4MB, but pvresize needs to allow space for metadata.  pvshrink resizes to 2995781632B.
 
+## Use at your own risk
 
+Use of this tool is entirely at your own risk.  In particular, you should perform your own sanity checks on the PV size before resizing a partition containing the PV.
+
+(c) 2018 [Mythic Beasts](https://mythic-beasts.com/)
